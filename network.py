@@ -10,7 +10,7 @@ tf.reset_default_graph()
 
 
 
-def network1(x, isTrain = True, reuse = False):
+def network(x, isTrain = True, reuse = False):
     
     with tf.variable_scope('CNN_global', reuse=reuse):
         
@@ -70,30 +70,48 @@ def network1(x, isTrain = True, reuse = False):
         num_features_total = 34 * 256
         h_pool_flat = tf.reshape(pooled6, [-1, num_features_total])
         
-        drop1 = tf.nn.dropout(h_pool_flat,0.2)
+        drop1 = tf.nn.dropout(h_pool_flat,0.5)
         
         W_1 = tf.Variable(tf.truncated_normal([num_features_total, 1024], stddev=0.05), name="W_1")
         b_1 = tf.Variable(tf.constant(0.1, shape=[1024]), name="b_1")
         fc1 = tf.nn.relu(tf.nn.xw_plus_b(drop1, W_1, b_1), name="fc1")
         
-        drop2 = tf.nn.dropout(fc1,0.2)
+        drop2 = tf.nn.dropout(fc1,0.5)
     
         W_2 = tf.Variable(tf.truncated_normal([1024, 1024], stddev=0.05), name="W_2")
         b_2 = tf.Variable(tf.constant(0.1, shape=[1024]), name="b_2")
         fc2 = tf.nn.relu(tf.nn.xw_plus_b(drop2, W_2, b_2), name="fc2")
         
-        W_3 = tf.Variable(tf.truncated_normal([1024, 10], stddev=0.05), name="W_3")
-        b_3 = tf.Variable(tf.constant(0.1, shape=[10]), name="b_3")
+        W_3 = tf.Variable(tf.truncated_normal([1024, 5], stddev=0.05), name="W_3")
+        b_3 = tf.Variable(tf.constant(0.1, shape=[5]), name="b_3")
         scores = tf.nn.xw_plus_b(fc2, W_3, b_3, name="output")
         predictions = tf.argmax(scores, 1, name="predictions")
         
-    return scores,predictions
-
-    
-x = tf.convert_to_tensor(np.ones(shape=[1,70,1014,1]),dtype = tf.float32)
-
-print(network1(x))
+    return scores,predictions               
                  
-                 
-input_x = tf.placeholder(tf.float32, [None, 70, sequence_max_length, 1], name="input_x")
-          
+input_x = tf.placeholder(tf.float32, [None, 70, 1014, 1], name="input_x")
+input_y = tf.placeholder(tf.float32, [None, 5], name="input_y")
+isTrain = tf.placeholder(dtype=tf.bool)
+
+
+scores_network,preds_network = network(input_x, isTrain)
+loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(scores_network,input_y))
+
+correct_predictions = tf.equal(preds_network, tf.argmax(input_y, 1))
+accuracy = tf.reduce_mean(tf.cast(correct_predictions, "float"), name="accuracy")
+
+T_vars = tf.trainable_variables()
+N_vars = [var for var in T_vars if var.name.startswith('CNN_global')]
+
+with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
+    N_optim = tf.train.AdamOptimizer(1e-3).minimize(loss, var_list=N_vars)    
+
+sess = tf.Session()
+saver = tf.train.Saver()
+init = tf.global_variables_initializer()
+sess.run(init)
+
+def step(inputs,targets):
+    feed_dict = {input_x: inputs, input_y: targets, isTrain: True}
+    loss_batch,_ = sess.run([loss, N_optim], feed_Dict = feed_dict)
+    return loss_batch
